@@ -1,43 +1,34 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-// ✅ Create upload directories
-const uploadDir = path.join(__dirname, '../../uploads');
-const unitImagesDir = path.join(uploadDir, 'unit-images');
-const tenantImagesDir = path.join(uploadDir, 'tenant-images');
-const agreementsDir = path.join(uploadDir, 'agreements');
-const employeeImagesDir = path.join(uploadDir, 'employees');
-const rePropertiesDir = path.join(uploadDir, 're-properties');
-
-// ✅ Create ALL directories (including rePropertiesDir)
-[uploadDir, unitImagesDir, tenantImagesDir, agreementsDir, employeeImagesDir, rePropertiesDir].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+// ✅ Cloudinary Configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    if (file.fieldname === 'unitImage') {
-      cb(null, unitImagesDir);
-    } else if (file.fieldname === 'tenantImage') {
-      cb(null, tenantImagesDir);
-    } else if (file.fieldname === 'agreementFiles') {
-      cb(null, agreementsDir);
-    } else if (file.fieldname === 'image') {
-      cb(null, employeeImagesDir);
-    } else if (file.fieldname === 'propertyPhotos') {
-      cb(null, rePropertiesDir);
-    } else {
-      cb(null, uploadDir);
-    }
+// ✅ Field-specific folder mapping (same as your old structure)
+const FOLDER_MAP = {
+  unitImage: 'bms/unit-images',
+  tenantImage: 'bms/tenant-images',
+  agreementFiles: 'bms/agreements',
+  image: 'bms/employees',
+  propertyPhotos: 'bms/re-properties',
+};
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: (req, file) => {
+    const folder = FOLDER_MAP[file.fieldname] || 'bms/misc';
+    return {
+      folder: folder,
+      allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
+      resource_type: file.mimetype === 'application/pdf' ? 'raw' : 'image',
+      public_id: `${file.fieldname}-${Date.now()}-${Math.round(Math.random() * 1e9)}`,
+    };
   },
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + unique + ext);
-  }
 });
 
 const fileFilter = (req, file, cb) => {
@@ -52,7 +43,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter
+  fileFilter,
 });
 
 module.exports = upload;
