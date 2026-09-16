@@ -1,0 +1,38 @@
+const express = require('express');
+const router = express.Router();
+const { verifyToken, checkRole } = require('../middleware/auth');
+const upload = require('../middleware/upload'); // ✅ Import multer
+const {
+  getEmployees,
+  getEmployee,
+  createEmployee,
+  updateEmployee,
+  deleteEmployee,
+  markAttendance,
+  addTask,
+  updateTask,
+  paySalary,
+} = require('../controllers/employeeController');
+
+// ✅ All routes protected
+router.use(verifyToken);
+
+// ✅ Employee CRUD
+router.get('/', getEmployees);
+router.get('/:id', getEmployee);
+// ✅ Add upload.single('image') for create and update
+router.post('/', checkRole(['admin', 'super_admin']), upload.single('image'), createEmployee);
+router.put('/:id', checkRole(['admin', 'super_admin']), upload.single('image'), updateEmployee);
+router.delete('/:id', checkRole(['admin', 'super_admin']), deleteEmployee);
+
+// ✅ Attendance
+router.post('/:id/attendance', checkRole(['admin', 'super_admin']), markAttendance);
+
+// ✅ Tasks
+router.post('/:id/tasks', checkRole(['admin', 'super_admin']), addTask);
+router.put('/:id/tasks/:taskId', updateTask);
+
+// ✅ Salary
+router.post('/:id/salary', checkRole(['admin', 'super_admin']), paySalary);
+
+module.exports = router;
