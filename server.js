@@ -10,9 +10,15 @@ const app = express();
 
 // ✅ CORS Configuration
 const corsOptions = {
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'https://www.zmdost.com','https://api.zmdost.com'],
+  origin: [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://zmdost.com',
+    'https://www.zmdost.com',
+    'https://api.zmdost.com',
+  ],
   credentials: true,
- methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   exposedHeaders: ['Content-Length', 'X-Response-Time'],
 };
