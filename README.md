@@ -71,6 +71,15 @@ The backend supports multiple areas of the Building Management System, including
 
 ---
 
+## 🌐 Live Application
+
+🚀 **Live Website:** https://zmdost.com
+
+This backend powers the production **ZM Dost Building Management System** currently deployed at the live domain above.
+
+The backend API is maintained separately from the Next.js frontend.
+
+
 ## 🔗 Frontend Repository
 
 The frontend is developed separately using **Next.js**.
