@@ -157,28 +157,45 @@ exports.getAllUsers = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
-    
-    // Remove password from updates if not being changed
-    if (updates.password) {
-      const user = await User.findById(id);
-      user.password = updates.password;
-      await user.save();
-      delete updates.password;
-    }
+    const updates = { ...req.body };
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      updates,
-      { new: true, runValidators: true }
-    ).select('-password');
-
+    const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found.',
       });
     }
+
+    // Handle password update if provided
+    if (updates.password && typeof updates.password === 'string' && updates.password.trim() !== '') {
+      if (updates.password.length < 6) {
+        return res.status(400).json({
+          success: false,
+          message: 'Password must be at least 6 characters.',
+        });
+      }
+      user.password = updates.password; // Mongoose pre('save') hook hashes with bcrypt
+    }
+    delete updates.password;
+
+    // Check email uniqueness if email is being updated
+    if (updates.email && updates.email !== user.email) {
+      const existingUser = await User.findOne({ email: updates.email, _id: { $ne: id } });
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'User already exists with this email.',
+        });
+      }
+    }
+
+    // Apply remaining updates to the user document
+    Object.keys(updates).forEach((key) => {
+      user[key] = updates[key];
+    });
+
+    await user.save();
 
     res.status(200).json({
       success: true,

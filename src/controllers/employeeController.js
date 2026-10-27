@@ -336,6 +336,123 @@ exports.markAttendance = async (req, res) => {
   }
 };
 
+// ✅ Update attendance - Edit existing attendance and recalculate deductions
+exports.updateAttendance = async (req, res) => {
+  try {
+    const { id, attendanceId } = req.params;
+    const attendanceData = req.body;
+
+    const employee = await Employee.findById(id);
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found.',
+      });
+    }
+
+    if (!isAdmin(req.user)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only administrators can update attendance.',
+      });
+    }
+
+    // Find attendance record by subdocument _id or date
+    let attendanceRecord = employee.attendance.id(attendanceId);
+    if (!attendanceRecord) {
+      attendanceRecord = employee.attendance.find(
+        (a) => a._id?.toString() === attendanceId || a.date === attendanceId
+      );
+    }
+
+    if (!attendanceRecord) {
+      return res.status(404).json({
+        success: false,
+        message: 'Attendance record not found.',
+      });
+    }
+
+    const date = attendanceData.date || attendanceRecord.date;
+    if (employee.joiningDate && date < employee.joiningDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Attendance cannot be marked before the employee joining date.',
+      });
+    }
+
+    // Check if new date clashes with another existing record
+    if (date !== attendanceRecord.date) {
+      const duplicate = employee.attendance.find(
+        (a) => a.date === date && a._id?.toString() !== attendanceRecord._id?.toString()
+      );
+      if (duplicate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Attendance record already exists for this date.',
+        });
+      }
+    }
+
+    const status = attendanceData.status || attendanceRecord.status;
+    const dayOfWeek = new Date(date).getDay();
+    const isFriday = dayOfWeek === 5;
+
+    let finalStatus = status;
+    let chargeableLateMinutes = 0;
+    let lateDeductionAmount = 0;
+    let leaveDeductionAmount = 0;
+
+    if (isFriday && status !== 'Present') {
+      finalStatus = 'Friday Off';
+    } else if (status === 'Present') {
+      const lateMinutes = Number(attendanceData.lateMinutes ?? attendanceRecord.lateMinutes ?? 0);
+      const graceMinutes = employee.shiftTiming?.graceMinutes ?? 30;
+      const lateDeductionRate = employee.attendanceSettings?.lateDeduction ?? 10;
+
+      chargeableLateMinutes = Math.max(lateMinutes - graceMinutes, 0);
+      lateDeductionAmount = chargeableLateMinutes * lateDeductionRate;
+    } else if (status === 'Leave' || status === 'Absent') {
+      const currentMonth = date.slice(0, 7);
+      const monthlyLeaves = employee.attendance.filter(
+        (a) =>
+          a._id?.toString() !== attendanceRecord._id?.toString() &&
+          a.date?.startsWith(currentMonth) &&
+          (a.status === 'Leave' || a.status === 'Absent')
+      ).length;
+
+      const freeLeavesPerMonth = employee.shiftTiming?.monthlyLeaves ?? 1;
+      const leaveDeductionRate = employee.attendanceSettings?.leaveDeduction ?? 500;
+
+      if (monthlyLeaves >= freeLeavesPerMonth) {
+        leaveDeductionAmount = leaveDeductionRate;
+      }
+    }
+
+    attendanceRecord.date = date;
+    attendanceRecord.status = finalStatus;
+    attendanceRecord.checkIn = finalStatus === 'Present' ? (attendanceData.checkIn ?? attendanceRecord.checkIn ?? null) : null;
+    attendanceRecord.checkOut = finalStatus === 'Present' ? (attendanceData.checkOut ?? attendanceRecord.checkOut ?? null) : null;
+    attendanceRecord.lateMinutes = finalStatus === 'Present' ? Number(attendanceData.lateMinutes ?? attendanceRecord.lateMinutes ?? 0) : 0;
+    attendanceRecord.chargeableLateMinutes = chargeableLateMinutes;
+    attendanceRecord.lateDeductionAmount = lateDeductionAmount;
+    attendanceRecord.leaveDeductionAmount = leaveDeductionAmount;
+
+    await employee.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Attendance updated successfully.',
+      data: employee,
+    });
+  } catch (error) {
+    console.error('Update attendance error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // ✅ Add task
 exports.addTask = async (req, res) => {
   try {

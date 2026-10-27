@@ -9,6 +9,7 @@ const {
   updateEmployee,
   deleteEmployee,
   markAttendance,
+  updateAttendance,
   addTask,
   updateTask,
   paySalary,
@@ -27,6 +28,7 @@ router.delete('/:id', checkRole(['admin', 'super_admin']), deleteEmployee);
 
 // ✅ Attendance
 router.post('/:id/attendance', checkRole(['admin', 'super_admin']), markAttendance);
+router.put('/:id/attendance/:attendanceId', checkRole(['admin', 'super_admin']), updateAttendance);
 
 // ✅ Tasks
 router.post('/:id/tasks', checkRole(['admin', 'super_admin']), addTask);
