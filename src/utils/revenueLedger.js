@@ -308,17 +308,17 @@ async function filterRevenueData(revenue, { buildingId, shift } = {}) {
     ...plainRevenue,
     income: (plainRevenue.income || []).filter((item) => {
       if (buildingId && !matchBuilding(item, buildingId)) return false;
-      if (!buildingId && shift && !matchShift(item, shift, shiftMap)) return false;
+      if (shift && !matchShift(item, shift, shiftMap)) return false;
       return true;
     }),
     expenses: (plainRevenue.expenses || []).filter((item) => {
       if (buildingId && !matchBuilding(item, buildingId)) return false;
-      if (!buildingId && shift && !matchShift(item, shift, shiftMap)) return false;
+      if (shift && !matchShift(item, shift, shiftMap)) return false;
       return true;
     }),
     securities: (plainRevenue.securities || []).filter((item) => {
       if (buildingId && !matchBuilding(item, buildingId)) return false;
-      if (!buildingId && shift && !matchShift(item, shift, shiftMap)) return false;
+      if (shift && !matchShift(item, shift, shiftMap)) return false;
       return true;
     }),
   };
@@ -387,6 +387,9 @@ module.exports = {
   settleSecurity,
   buildTransactions,
   filterRevenueData,
+  getUnitShiftMap,
+  matchBuilding,
+  matchShift,
   isSecurityDepositIncome,
   isSecurityRefundExpense,
 };

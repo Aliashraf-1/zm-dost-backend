@@ -3,14 +3,14 @@ const Employee = require('../models/Employee');
 const Lead = require('../models/Lead');
 const Revenue = require('../models/Revenue');
 const Customer = require('../models/Customer');
-const { isSecurityDepositIncome, isSecurityRefundExpense } = require('../utils/revenueLedger');
+const { isSecurityDepositIncome, isSecurityRefundExpense, filterRevenueData } = require('../utils/revenueLedger');
 
 // ============================================================
 // PROFIT & LOSS REPORT
 // ============================================================
 exports.getProfitLossReport = async (req, res) => {
   try {
-    const { period = 'monthly', startDate, endDate } = req.query;
+    const { period = 'monthly', startDate, endDate, buildingId, shift } = req.query;
 
     let start = new Date();
     let end = new Date();
@@ -37,7 +37,10 @@ exports.getProfitLossReport = async (req, res) => {
         start = new Date(start.getFullYear(), start.getMonth(), 1);
     }
 
-    const revenue = await Revenue.findOne();
+    let revenue = await Revenue.findOne();
+    if (revenue && (buildingId || shift)) {
+      revenue = await filterRevenueData(revenue, { buildingId, shift });
+    }
 
     let income = [];
     let expenses = [];
@@ -78,6 +81,8 @@ exports.getProfitLossReport = async (req, res) => {
       success: true,
       data: {
         period,
+        buildingId: buildingId || null,
+        shift: shift || null,
         startDate: start.toISOString(),
         endDate: end.toISOString(),
         summary: {
@@ -107,7 +112,7 @@ exports.getProfitLossReport = async (req, res) => {
 // ============================================================
 exports.getGeneralReport = async (req, res) => {
   try {
-    const { period = 'monthly', startDate, endDate } = req.query;
+    const { period = 'monthly', startDate, endDate, buildingId, shift } = req.query;
 
     let start = new Date();
     let end = new Date();
@@ -133,8 +138,11 @@ exports.getGeneralReport = async (req, res) => {
         start = new Date(start.getFullYear(), start.getMonth(), 1);
     }
 
-    // ✅ Buildings Data
-    const buildings = await Building.find();
+    // ✅ Buildings Data (filtered by buildingId if provided)
+    let buildings = await Building.find();
+    if (buildingId) {
+      buildings = buildings.filter(b => String(b._id) === String(buildingId) || String(b.id) === String(buildingId));
+    }
     const totalBuildings = buildings.length;
     const activeBuildings = buildings.filter(b => b.status === 'Active').length;
 
@@ -144,10 +152,16 @@ exports.getGeneralReport = async (req, res) => {
     let buildingsAdded = 0;
     let buildingsRemoved = 0;
 
+    const matchesShift = (room) => {
+      if (!shift) return true;
+      return String(room?.shift || '24/7').toLowerCase() === String(shift).toLowerCase();
+    };
+
     buildings.forEach(b => {
-      totalRooms += (b.rooms || []).length;
-      rentedRooms += (b.rooms || []).filter(r => r.status === 'Rented').length;
-      availableRooms += (b.rooms || []).filter(r => r.status === 'Available').length;
+      const rooms = (b.rooms || []).filter(matchesShift);
+      totalRooms += rooms.length;
+      rentedRooms += rooms.filter(r => r.status === 'Rented').length;
+      availableRooms += rooms.filter(r => r.status === 'Available').length;
 
       // Check if added in period
       if (b.createdAt && new Date(b.createdAt) >= start && new Date(b.createdAt) <= end) {
@@ -158,13 +172,13 @@ exports.getGeneralReport = async (req, res) => {
       }
     });
 
-    // ✅ Units Added/Rented/Available in period
+    // ✅ Units Added/Rented/Available in period (filtered by shift if provided)
     let unitsAdded = 0;
     let unitsRentedInPeriod = 0;
     let unitsAvailableInPeriod = 0;
 
     buildings.forEach(b => {
-      (b.rooms || []).forEach(r => {
+      (b.rooms || []).filter(matchesShift).forEach(r => {
         if (r.createdAt && new Date(r.createdAt) >= start && new Date(r.createdAt) <= end) {
           unitsAdded++;
         }
@@ -184,8 +198,11 @@ exports.getGeneralReport = async (req, res) => {
     const employeesAdded = employees.filter(e => e.createdAt && new Date(e.createdAt) >= start && new Date(e.createdAt) <= end).length;
     const employeesRemoved = employees.filter(e => e.status === 'Inactive' && e.updatedAt && new Date(e.updatedAt) >= start && new Date(e.updatedAt) <= end).length;
 
-    // ✅ Revenue Data
-    const revenue = await Revenue.findOne();
+    // ✅ Revenue Data (filtered by buildingId and shift if provided)
+    let revenue = await Revenue.findOne();
+    if (revenue && (buildingId || shift)) {
+      revenue = await filterRevenueData(revenue, { buildingId, shift });
+    }
     let periodExpenses = [];
     let totalPeriodExpenses = 0;
     let majorExpenses = [];
@@ -203,8 +220,11 @@ exports.getGeneralReport = async (req, res) => {
         .slice(0, 5);
     }
 
-    // ✅ Customers Data
-    const customers = await Customer.find();
+    // ✅ Customers Data (filtered by buildingId if provided)
+    let customers = await Customer.find();
+    if (buildingId) {
+      customers = customers.filter(c => String(c.currentRental?.buildingId) === String(buildingId));
+    }
     const totalCustomers = customers.length;
     const activeCustomers = customers.filter(c => c.currentRental?.status === 'Active').length;
 
@@ -212,6 +232,8 @@ exports.getGeneralReport = async (req, res) => {
       success: true,
       data: {
         period,
+        buildingId: buildingId || null,
+        shift: shift || null,
         startDate: start.toISOString(),
         endDate: end.toISOString(),
         buildings: {
@@ -259,7 +281,7 @@ exports.getGeneralReport = async (req, res) => {
 // ============================================================
 exports.getEmployeePerformanceReport = async (req, res) => {
   try {
-    const { period = 'monthly', startDate, endDate, search = '' } = req.query;
+    const { period = 'monthly', startDate, endDate, search = '', buildingId, shift } = req.query;
 
     let start = new Date();
     let end = new Date();
@@ -392,6 +414,8 @@ exports.getEmployeePerformanceReport = async (req, res) => {
       success: true,
       data: {
         period,
+        buildingId: buildingId || null,
+        shift: shift || null,
         startDate: start.toISOString(),
         endDate: end.toISOString(),
         summary,
@@ -412,18 +436,21 @@ exports.getEmployeePerformanceReport = async (req, res) => {
 
 exports.exportAllReports = async (req, res) => {
   try {
-    const { period = 'monthly' } = req.body;
+    const period = req.body?.period || req.query?.period || 'monthly';
+    const buildingId = req.body?.buildingId || req.query?.buildingId;
+    const shift = req.body?.shift || req.query?.shift;
 
-    // ✅ Direct helper functions call karo (self-reference fix)
-    const profitLoss = await getProfitLossReportData(period);
-    const general = await getGeneralReportData(period);
-    const employee = await getEmployeePerformanceReportData(period);
+    const profitLoss = await getProfitLossReportData(period, { buildingId, shift });
+    const general = await getGeneralReportData(period, { buildingId, shift });
+    const employee = await getEmployeePerformanceReportData(period, { buildingId, shift });
 
     res.status(200).json({
       success: true,
       data: {
         generatedAt: new Date().toISOString(),
         period,
+        buildingId: buildingId || null,
+        shift: shift || null,
         profitLoss,
         general,
         employee,
@@ -438,8 +465,11 @@ exports.exportAllReports = async (req, res) => {
 };
 
 // ✅ Helper functions for export
-async function getProfitLossReportData(period) {
-  const revenue = await Revenue.findOne();
+async function getProfitLossReportData(period, { buildingId, shift } = {}) {
+  let revenue = await Revenue.findOne();
+  if (revenue && (buildingId || shift)) {
+    revenue = await filterRevenueData(revenue, { buildingId, shift });
+  }
   return {
     totalIncome: revenue?.income?.reduce((sum, i) => sum + (i.amount || 0), 0) || 0,
     totalExpenses: revenue?.expenses?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0,
@@ -447,10 +477,16 @@ async function getProfitLossReportData(period) {
   };
 }
 
-async function getGeneralReportData(period) {
-  const buildings = await Building.find();
+async function getGeneralReportData(period, { buildingId, shift } = {}) {
+  let buildings = await Building.find();
+  if (buildingId) {
+    buildings = buildings.filter(b => String(b._id) === String(buildingId) || String(b.id) === String(buildingId));
+  }
   const employees = await Employee.find();
-  const customers = await Customer.find();
+  let customers = await Customer.find();
+  if (buildingId) {
+    customers = customers.filter(c => String(c.currentRental?.buildingId) === String(buildingId));
+  }
 
   return {
     buildings: buildings.length,
@@ -459,7 +495,7 @@ async function getGeneralReportData(period) {
   };
 }
 
-async function getEmployeePerformanceReportData(period) {
+async function getEmployeePerformanceReportData(period, { buildingId, shift } = {}) {
   const employees = await Employee.find();
   return {
     total: employees.length,
