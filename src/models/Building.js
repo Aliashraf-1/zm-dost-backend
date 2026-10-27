@@ -48,6 +48,11 @@ const buildingSchema = new mongoose.Schema({
       type: String,
       default: 'Room',
     },
+    shift: {
+      type: String,
+      enum: ['Day', 'Night', '24/7'],
+      default: '24/7',
+    },
     monthlyRent: {
       type: Number,
       default: 0,

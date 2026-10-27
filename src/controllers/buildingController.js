@@ -22,6 +22,7 @@ async function syncRoomPaymentsToRevenue(building, room, previousRoom = null) {
           buildingNo: building.buildingNo,
           buildingId: building._id,
           unitId: room._id || room.id,
+          shift: room.shift || '24/7',
           amount: securityAmount,
           description: `Security received from ${room.tenant?.name || 'Tenant'} - Unit ${room.unitNo}`,
           remarks: 'Initial security received',
@@ -41,6 +42,7 @@ async function syncRoomPaymentsToRevenue(building, room, previousRoom = null) {
           source: 'Rent',
           buildingId: building._id,
           unitId: room._id || room.id,
+          shift: room.shift || '24/7',
           unitNo: room.unitNo,
           tenantName: room.tenant?.name || 'Tenant',
           status: 'Received',
@@ -63,6 +65,7 @@ async function syncRoomPaymentsToRevenue(building, room, previousRoom = null) {
         buildingNo: building.buildingNo,
         buildingId: building._id,
         unitId: room._id || room.id,
+        shift: room.shift || '24/7',
         amount: securityDelta,
         description: `Security received from ${room.tenant?.name || 'Tenant'} - Unit ${room.unitNo}`,
         remarks: 'Additional security received',
@@ -97,6 +100,7 @@ async function syncRoomPaymentsToRevenue(building, room, previousRoom = null) {
         source: 'Rent',
         buildingId: building._id,
         unitId: room._id || room.id,
+        shift: room.shift || '24/7',
         unitNo: room.unitNo,
         tenantName: room.tenant?.name || 'Tenant',
         status: 'Received',
@@ -345,6 +349,9 @@ exports.addRoom = async (req, res) => {
         message: 'Building not found.',
       });
     }
+
+    // Ensure shift has default
+    roomData.shift = roomData.shift || '24/7';
 
     // Add room
     building.rooms.push(roomData);

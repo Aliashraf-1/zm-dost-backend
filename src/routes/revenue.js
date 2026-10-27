@@ -9,6 +9,7 @@ const {
   addSecurity,
   settleSecurity,
   getTransactions,
+  deleteTransaction,
 } = require('../controllers/revenueController');
 
 // ✅ All routes protected
@@ -25,5 +26,8 @@ router.post('/income', addIncome);
 router.post('/expense', addExpense);
 router.post('/security', addSecurity);
 router.post('/security/settle', settleSecurity);
+
+// ✅ Delete transaction (admin & super_admin only)
+router.delete('/transaction/:transactionId', checkRole(['admin', 'super_admin']), deleteTransaction);
 
 module.exports = router;

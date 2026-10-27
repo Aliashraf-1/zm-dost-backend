@@ -1,4 +1,5 @@
 const Revenue = require('../models/Revenue');
+const Building = require('../models/Building');
 
 function isSecurityRefundExpense(entry) {
   const text = `${entry?.type || ''} ${entry?.category || ''}`.toLowerCase();
@@ -79,6 +80,7 @@ async function recordSecurityReceived(payload = {}) {
     buildingNo: payload.buildingNo || '',
     buildingId: payload.buildingId || null,
     unitId: payload.unitId || null,
+    shift: payload.shift || '24/7',
     amount,
     status: 'Held',
     description: payload.description || `Security received from ${tenantName}`,
@@ -113,6 +115,9 @@ async function recordIncome(payload = {}) {
     type: payload.type || 'Income',
     transactionType: 'Income',
     amount,
+    buildingId: payload.buildingId || null,
+    unitId: payload.unitId || null,
+    shift: payload.shift || '24/7',
     createdAt: now,
     receivedAt: payload.receivedAt || now,
   });
@@ -135,6 +140,9 @@ async function recordExpense(payload = {}) {
     type: payload.type || 'Expense',
     transactionType: 'Expense',
     amount,
+    buildingId: payload.buildingId || null,
+    unitId: payload.unitId || null,
+    shift: payload.shift || '24/7',
     createdAt: now,
     paidAt: payload.paidAt || now,
   });
@@ -259,39 +267,107 @@ function toPlain(doc) {
   return doc._doc || doc;
 }
 
-function buildTransactions(revenue) {
+async function getUnitShiftMap() {
+  try {
+    const buildings = await Building.find({}, 'rooms._id rooms.shift');
+    const map = {};
+    (buildings || []).forEach((b) => {
+      (b.rooms || []).forEach((r) => {
+        if (r._id) {
+          map[String(r._id)] = r.shift || '24/7';
+        }
+      });
+    });
+    return map;
+  } catch (err) {
+    return {};
+  }
+}
+
+function matchBuilding(item, buildingId) {
+  if (!buildingId) return true;
+  return sameId(item.buildingId, buildingId);
+}
+
+function matchShift(item, shift, shiftMap = {}) {
+  if (!shift) return true;
+  const itemShift = item.shift || (item.unitId && shiftMap[String(item.unitId)]) || '24/7';
+  return String(itemShift).toLowerCase() === String(shift).toLowerCase();
+}
+
+async function filterRevenueData(revenue, { buildingId, shift } = {}) {
+  if (!buildingId && !shift) {
+    return revenue;
+  }
+
+  const shiftMap = shift ? await getUnitShiftMap() : {};
+
+  const plainRevenue = toPlain(revenue);
+
+  return {
+    ...plainRevenue,
+    income: (plainRevenue.income || []).filter((item) => {
+      if (buildingId && !matchBuilding(item, buildingId)) return false;
+      if (!buildingId && shift && !matchShift(item, shift, shiftMap)) return false;
+      return true;
+    }),
+    expenses: (plainRevenue.expenses || []).filter((item) => {
+      if (buildingId && !matchBuilding(item, buildingId)) return false;
+      if (!buildingId && shift && !matchShift(item, shift, shiftMap)) return false;
+      return true;
+    }),
+    securities: (plainRevenue.securities || []).filter((item) => {
+      if (buildingId && !matchBuilding(item, buildingId)) return false;
+      if (!buildingId && shift && !matchShift(item, shift, shiftMap)) return false;
+      return true;
+    }),
+  };
+}
+
+async function buildTransactions(revenue, { buildingId, shift } = {}) {
+  const targetRevenue = (buildingId || shift)
+    ? await filterRevenueData(revenue, { buildingId, shift })
+    : revenue;
+
+  const shiftMap = await getUnitShiftMap();
   const transactions = [];
 
-  (revenue.income || []).forEach((item) => {
+  (targetRevenue.income || []).forEach((item) => {
     if (!item || isSecurityDepositIncome(item)) return;
     const plain = toPlain(item);
     const isForfeit =
       String(plain.type || '').toLowerCase().includes('forfeit') ||
       String(plain.category || '').toLowerCase().includes('forfeit');
+    const resolvedShift = plain.shift || (plain.unitId && shiftMap[String(plain.unitId)]) || '24/7';
     transactions.push({
       ...plain,
+      shift: resolvedShift,
       type: isForfeit ? 'Security Forfeited' : 'Income',
       date: plain.receivedAt || plain.createdAt,
     });
   });
 
-  (revenue.expenses || []).forEach((item) => {
+  (targetRevenue.expenses || []).forEach((item) => {
     if (!item || isSecurityRefundExpense(item)) return;
     const plain = toPlain(item);
+    const resolvedShift = plain.shift || (plain.unitId && shiftMap[String(plain.unitId)]) || '24/7';
     transactions.push({
       ...plain,
+      shift: resolvedShift,
       type: 'Expense',
       date: plain.paidAt || plain.createdAt,
     });
   });
 
-  (revenue.securities || []).forEach((item) => {
+  (targetRevenue.securities || []).forEach((item) => {
     if (!item) return;
     const plain = toPlain(item);
     const eventType = plain.eventType || (plain.status === 'Returned' ? 'Returned' : plain.status === 'Forfeited' ? 'Forfeited' : 'Received');
     if (eventType === 'Forfeited') return;
+    const resolvedShift = plain.shift || (plain.unitId && shiftMap[String(plain.unitId)]) || '24/7';
     transactions.push({
       ...plain,
+      shift: resolvedShift,
       type: eventType === 'Returned' ? 'Security Returned' : 'Security',
       date: plain.createdAt || new Date().toISOString(),
       description: plain.description || `Security from ${plain.tenantName || 'Tenant'}`,
@@ -310,6 +386,7 @@ module.exports = {
   recordExpense,
   settleSecurity,
   buildTransactions,
+  filterRevenueData,
   isSecurityDepositIncome,
   isSecurityRefundExpense,
 };

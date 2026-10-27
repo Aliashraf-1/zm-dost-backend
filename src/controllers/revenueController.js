@@ -6,17 +6,31 @@ const {
   recordSecurityReceived,
   settleSecurity,
   buildTransactions,
+  filterRevenueData,
 } = require('../utils/revenueLedger');
 
 exports.getRevenue = async (req, res) => {
   try {
+    const { buildingId, shift } = req.query;
     const revenue = await getOrCreateRevenue();
-    const stats = recalculate(revenue);
-    await revenue.save();
+
+    if (!buildingId && !shift) {
+      const stats = recalculate(revenue);
+      await revenue.save();
+
+      return res.status(200).json({
+        success: true,
+        data: revenue,
+        stats,
+      });
+    }
+
+    const filteredRevenue = await filterRevenueData(revenue, { buildingId, shift });
+    const stats = recalculate(filteredRevenue);
 
     res.status(200).json({
       success: true,
-      data: revenue,
+      data: filteredRevenue,
       stats,
     });
   } catch (error) {
@@ -129,8 +143,9 @@ exports.settleSecurity = async (req, res) => {
 
 exports.getTransactions = async (req, res) => {
   try {
+    const { buildingId, shift } = req.query;
     const revenue = await getOrCreateRevenue();
-    const transactions = buildTransactions(revenue);
+    const transactions = await buildTransactions(revenue, { buildingId, shift });
 
     res.status(200).json({
       success: true,
@@ -139,6 +154,69 @@ exports.getTransactions = async (req, res) => {
     });
   } catch (error) {
     console.error('Get transactions error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.deleteTransaction = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    const revenue = await getOrCreateRevenue();
+
+    let deleted = false;
+
+    // Check income
+    const incomeIdx = (revenue.income || []).findIndex(
+      (item) => item.id === transactionId || String(item._id) === transactionId
+    );
+    if (incomeIdx !== -1) {
+      revenue.income.splice(incomeIdx, 1);
+      deleted = true;
+    }
+
+    // Check expenses
+    if (!deleted) {
+      const expenseIdx = (revenue.expenses || []).findIndex(
+        (item) => item.id === transactionId || String(item._id) === transactionId
+      );
+      if (expenseIdx !== -1) {
+        revenue.expenses.splice(expenseIdx, 1);
+        deleted = true;
+      }
+    }
+
+    // Check securities
+    if (!deleted) {
+      const securityIdx = (revenue.securities || []).findIndex(
+        (item) => item.id === transactionId || String(item._id) === transactionId
+      );
+      if (securityIdx !== -1) {
+        revenue.securities.splice(securityIdx, 1);
+        deleted = true;
+      }
+    }
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transaction not found.',
+      });
+    }
+
+    const stats = recalculate(revenue);
+    await revenue.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Transaction deleted successfully.',
+      data: revenue,
+      stats,
+    });
+  } catch (error) {
+    console.error('Delete transaction error:', error);
     res.status(500).json({
       success: false,
       message: error.message,
